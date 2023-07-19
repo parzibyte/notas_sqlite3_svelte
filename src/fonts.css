@@ -1,0 +1,9 @@
+@font-face {
+    font-family: 'FuenteTitulo';
+    font-style: normal;
+    font-weight: 500;
+    src: local(''), url('../static/fonts/Sniglet-Regular.ttf');
+}
+.fuente-titulo{
+    font-family: 'FuenteTitulo';
+}

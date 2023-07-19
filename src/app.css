@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.tachado {
+    text-decoration: line-through;
+}
+
+.desenfocado {
+    color: transparent;
+    text-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+}
