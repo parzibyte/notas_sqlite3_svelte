@@ -4,6 +4,43 @@ export class NotasService {
    constructor(baseDeDatos) {
       this.baseDeDatos = baseDeDatos;
    }
+   async actualizarElementoDeLista(id, contenido, terminado, encriptado = false, contraseña = "") {
+      return new Promise(async (resolve, reject) => {
+         try {
+            if (encriptado) {
+               contenido = await encriptacionService.encriptar(contraseña, contenido);
+            }
+            await this.baseDeDatos.exec({
+               sql: "UPDATE elementos_listas SET contenido = ?, terminado = ? WHERE id = ?",
+               bind: [contenido, terminado, id],
+               returnValue: "resultRows",
+               rowMode: "object",
+            });
+            resolve(true);
+         } catch (error) {
+            reject(error);
+         }
+      });
+   }
+   async agregarElementoDeLista(idLista) {
+      return new Promise(async (resolve, reject) => {
+         try {
+            const filasInsertadas = await this.baseDeDatos.exec({
+               sql: "INSERT INTO elementos_listas(id_lista, contenido) VALUES (?, ?) RETURNING *",
+               bind: [idLista, ""],
+               returnValue: "resultRows",
+               rowMode: "object",
+            });
+            if (filasInsertadas.length <= 0) {
+               return;
+            }
+            const elementoRecienInsertado = filasInsertadas[0];
+            resolve(elementoRecienInsertado);
+         } catch (error) {
+            reject(error);
+         }
+      });
+   }
    async encriptarNota(nota, contraseña) {
       return new Promise(async (resolve, reject) => {
          try {
@@ -283,7 +320,7 @@ ORDER BY l.id DESC;`,
          }
       });
    }
-   async guardarLista(titulo, ultimaModificacion, encriptada, elementos, fondo) {
+   async guardarLista(titulo, ultimaModificacion, encriptada, fondo) {
       return new Promise(async (resolve, reject) => {
          try {
             const filasInsertadas = await this.baseDeDatos.exec({
@@ -300,41 +337,23 @@ ORDER BY l.id DESC;`,
                sql: "INSERT INTO fondos_listas(id_lista, nombre) VALUES (?, ?)",
                bind: [listaRecienInsertada.id, fondo],
             });
-            for (const elemento of elementos) {
-               await this.baseDeDatos.exec({
-                  sql: "INSERT INTO elementos_listas(id_lista, contenido, terminado) VALUES (?, ?, ?)",
-                  bind: [listaRecienInsertada.id, elemento.contenido, elemento.terminado]
-               });
-            }
             resolve(listaRecienInsertada);
          } catch (error) {
             reject(error);
          }
       });
    }
-   async actualizarLista(titulo, ultimaModificacion, encriptada, elementos, fondo, id) {
+   async actualizarLista(titulo, ultimaModificacion, id) {
       return new Promise(async (resolve, reject) => {
          try {
             await this.baseDeDatos.exec({
-               sql: "DELETE FROM elementos_listas WHERE id_lista = ?",
-               bind: [id],
-            });
-            await this.baseDeDatos.exec({
                sql: `UPDATE listas SET 
                   titulo = ?,
-                  ultimaModificacion = ?,
-                  encriptada = ?
+                  ultimaModificacion = ?
                   WHERE id = ?`,
-               bind: [titulo, ultimaModificacion, encriptada, id],
+               bind: [titulo, ultimaModificacion, id],
             });
-            for (const elemento of elementos) {
-               await this.baseDeDatos.exec({
-                  sql: "INSERT INTO elementos_listas(id_lista, contenido, terminado) VALUES (?, ?, ?)",
-                  bind: [id, elemento.contenido, elemento.terminado]
-               });
-            }
             resolve(true);
-
          } catch (error) {
             reject(error);
          }

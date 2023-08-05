@@ -7,7 +7,7 @@
         ChevronLeft,
         XCircle,
     } from "svelte-hero-icons";
-    import { afterUpdate, onMount, tick } from "svelte";
+    import { onMount, tick } from "svelte";
     import { debounce, milisegundosComoFecha } from "../utiles.js";
     import { fondos, resolverFondo } from "../fondos.js";
     import { imagenesAnimadas } from "../imagenesAnimadas.js";
@@ -19,18 +19,7 @@
     import DialogoSolicitarDato from "./DialogoSolicitarDato.svelte";
     import { singleton } from "./Singleton.js";
     import { NotasService } from "../NotasService.js";
-    let deberiaGuardar = false;
     let contraseña = "";
-    const MILISEGUNDOS_ESPERAR_PARA_GUARDAR_LISTA = 300;
-    afterUpdate(
-        debounce(async () => {
-            if (deberiaGuardar && !listaEstaVacia()) {
-                await guardarLista();
-                deberiaGuardar = false;
-            }
-        }, MILISEGUNDOS_ESPERAR_PARA_GUARDAR_LISTA)
-    );
-
     export let params;
     let errorContraseña = "";
     let estaEditando = false;
@@ -47,20 +36,7 @@
     let idTimeout = null;
     let mostrarDialogoConfirmacion = false;
     let mostrarDialogoSolicitarContraseña = false;
-    let indiceElementoEnfocado = -1;
     const milisegundosMostrarImagen = 300;
-    const listaEstaVacia = () => {
-        if (haTocadoElTitulo) {
-            return false;
-        }
-        if (
-            lista.elementos.length >= 1 &&
-            lista.elementos[lista.elementos.length - 1].contenido
-        ) {
-            return false;
-        }
-        return true;
-    };
     onMount(async () => {
         singleton.subscribe((bd) => {
             notasService = new NotasService(bd);
@@ -121,28 +97,17 @@
         let resultado;
         const ahora = new Date().getTime();
         lista.ultimaModificacion = ahora;
-        let listaParaGuardar = structuredClone(lista);
-        if (esListaEncriptada()) {
-            listaParaGuardar = await encriptacionService.encriptarLista(
-                listaParaGuardar,
-                contraseña
-            );
-        }
         if (estaEditando) {
             resultado = await notasService.actualizarLista(
-                listaParaGuardar.titulo,
+                lista.titulo,
                 ahora,
-                esListaEncriptada(),
-                listaParaGuardar.elementos,
-                fondo,
-                listaParaGuardar.id
+                lista.id
             );
         } else {
             resultado = await notasService.guardarLista(
-                listaParaGuardar.titulo,
+                lista.titulo,
                 ahora,
                 esListaEncriptada(),
-                listaParaGuardar.elementos,
                 fondo
             );
             lista.id = resultado.id;
@@ -165,20 +130,18 @@
         }
     };
     const agregarElementoALista = async () => {
+        await asegurarQueLaListaExisteEnLaBaseDeDatos();
         const ultimoElemento = lista.elementos[lista.elementos.length - 1];
         const deberiaAgregarElementoALista =
             lista.elementos.length <= 0 ||
             (ultimoElemento && ultimoElemento.contenido);
         if (deberiaAgregarElementoALista) {
-            lista.elementos = [
-                ...lista.elementos,
-                {
-                    contenido: "",
-                    terminado: false,
-                },
-            ];
+            const elementoRecienInsertado =
+                await notasService.agregarElementoDeLista(lista.id);
+            lista.elementos = [...lista.elementos, elementoRecienInsertado];
         }
         await tick();
+        await guardarLista();
         document
             .querySelector(`#elemento_${lista.elementos.length - 1}`)
             .focus();
@@ -211,25 +174,39 @@
             imagen.style.display = "none";
         }, milisegundosMostrarImagen);
     };
-    const onEstadoInputCambiado = async (event, estadoAnterior) => {
+    const onEstadoInputCambiado = async (event, elemento) => {
         const propioElemento = event.target;
-        const nuevoEstado = !estadoAnterior;
+        const nuevoEstado = !elemento.terminado;
         if (nuevoEstado) {
             mostrarImagen(propioElemento, imagen, -17, -22);
         }
-        onAlgoCambiado();
+        actualizarElemento(elemento.id, elemento.contenido, nuevoEstado);
     };
-    const onAlgoCambiado = () => {
-        deberiaGuardar = true;
+    const onTituloCambiado = debounce(async () => {
+        await guardarLista();
+    }, 500);
+
+    const asegurarQueLaListaExisteEnLaBaseDeDatos = async () => {
+        if (!lista.id) {
+            await guardarLista();
+        }
     };
-    const onElementoEnfocado = (indice) => {
-        indiceElementoEnfocado = indice;
+
+    const actualizarElemento = async (id, contenido, terminado) => {
+        await asegurarQueLaListaExisteEnLaBaseDeDatos();
+        await notasService.actualizarElementoDeLista(
+            id,
+            contenido,
+            terminado,
+            esListaEncriptada(),
+            contraseña
+        );
+        await guardarLista();
     };
     const modificarEtiquetasDeLista = () => {
         push("/etiquetas/lista/" + lista.id);
     };
     const eliminarElemento = async (elemento, indice) => {
-        indiceElementoEnfocado = -1;
         lista.elementos = lista.elementos.filter(
             (_, indiceDeElementoEnFilter) => {
                 if (indiceDeElementoEnFilter === indice) {
@@ -250,6 +227,9 @@
             errorContraseña = "Error con la contraseña " + e;
         }
     };
+    const onElementoCambiado = debounce((elemento) => {
+        actualizarElemento(elemento.id, elemento.contenido, elemento.terminado);
+    }, 500);
 </script>
 
 {#if mostrarDialogoConfirmacion}
@@ -274,7 +254,7 @@
 
 {#if fondo}
     <div
-        style="background-image: url('{fondo}'); z-index: -1; height: 100%; position: absolute; top: 0; width: 100%; opacity: 0.1;"
+        style="background-image: url('{fondo}'); z-index: -1; height: 100%; position: absolute; top: 0; width: 100%; opacity: 0.1;background-repeat:repeat;"
     />
 {/if}
 <div class="container mx-auto px-4">
@@ -316,7 +296,7 @@
         bind:innerText={lista.titulo}
         id="titulo"
         on:click={limpiarTituloSiEsNecesario}
-        on:input={onAlgoCambiado}
+        on:input={onTituloCambiado}
     >
         Aquí va el título
     </h1>
@@ -326,40 +306,36 @@
                 <input
                     type="checkbox"
                     on:change={(event) => {
-                        onEstadoInputCambiado(event, elemento.terminado);
+                        onEstadoInputCambiado(event, elemento);
                     }}
                     bind:checked={elemento.terminado}
-                    class="rounded border-gray-300 text-pink-400 focus:ring-pink-400 h-8 w-8"
+                    class="rounded border-gray-300 text-pink-400 focus:ring-pink-400 h-12 w-12"
                 />
                 <div
                     id={"elemento_" + indice}
                     class:tachado={elemento.terminado}
                     contenteditable="true"
                     on:keypress={onEnterPresionadoEnElemento}
-                    on:input={onAlgoCambiado}
+                    on:input={() => {
+                        onElementoCambiado(elemento);
+                    }}
                     class="flex-1 input-elemento-lista text-xl ml-2 text-amber-950"
                     bind:innerText={elemento.contenido}
-                    on:focus={() => {
-                        onElementoEnfocado(indice);
-                    }}
                 />
-                {#if indiceElementoEnfocado === indice}
-                    <button
-                        transition:slide
-                        on:click={() => {
-                            eliminarElemento(elemento, indice);
-                        }}
-                        class="right-0 w-8 h-8 text-zinc-700"
-                    >
-                        <Icon src={XCircle} solid />
-                    </button>
-                {/if}
+                <button
+                    transition:slide
+                    on:click={() => {
+                        eliminarElemento(elemento, indice);
+                    }}
+                    class="right-0 w-12 h-12 text-zinc-700"
+                >
+                    <Icon src={XCircle} solid />
+                </button>
             </div>
         {/each}
-        <div class="flex items-center">
-            <Icon src={PlusCircle} solid class="h-8 w-8	text-pink-400" />
+        <div on:click={agregarElementoALista} class="flex items-center">
+            <Icon src={PlusCircle} solid class="h-12 w-12 text-pink-400" />
             <div
-                on:click={agregarElementoALista}
                 class="flex-1 input-elemento-lista text-xl ml-2 text-amber-950"
             >
                 Elemento de la lista
